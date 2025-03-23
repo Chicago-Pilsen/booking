@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<script>
+    // Initialize IndexedDB
+    let db;
+    const request = indexedDB.open('AppointmentsDB', 1);
+
+    request.onerror = (event) => {
+        console.error('Database error:', event.target.error);
+    };
+
+    request.onupgradeneeded = (event) => {
+        db = event.target.result;
+        if (!db.objectStoreNames.contains('appointments')) {
+            const store = db.createObjectStore('appointments', { keyPath: 'id', autoIncrement: true });
+            store.createIndex('email', 'email', { unique: false });
+            store.createIndex('date', 'date', { unique: false });
+        }
+    };
+
+    request.onsuccess = (event) => {
+        db = event.target.result;
+    };
+
+    // Modify handleFormSubmit to save to IndexedDB
+    function saveToDatabase(appointmentData) {
+        const transaction = db.transaction(['appointments'], 'readwrite');
+        const store = transaction.objectStore('appointments');
+        store.add(appointmentData);
+
+        transaction.onerror = (event) => {
+            console.error('Transaction error:', event.target.error);
+        };
+
+        transaction.oncomplete = () => {
+            console.log('Appointment saved successfully');
+        };
+    }
+</script>
+<script src="https://smtpjs.com/v3/smtp.js"></script>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Appointment Booking System</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            color: #333;
+            background-color: #f8f9fa;
+        }
+        header {
+            background-color: #4a6fa5;
+            color: white;
+            text-align: center;
+            padding: 1rem 0;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .container {
+            width: 90%;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem 0;
+        }
+        h1, h2, h3 {
+            margin-top: 0;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 2rem;
+        }
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        .calendar {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            padding: 1.5rem;
+        }
+        .service-selection {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        .time-slots {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin-top: 1rem;
+        }
+        .time-slot {
+            background: #e9ecef;
+            border: none;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .time-slot:hover {
+            background: #dee2e6;
+        }
+        .time-slot.selected {
+            background: #4a6fa5;
+            color: white;
+        }
+        .time-slot.unavailable {
+            background: #f8f9fa;
+            color: #adb5bd;
+            cursor: not-allowed;
+        }
+        .month-nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        .month-nav button {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #4a6fa5;
+        }
+        .days-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 5px;
+            text-align: center;
+        }
+        .day-name {
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            color: #6c757d;
+            padding: 5px 0;
+        }
+        .day {
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .day:hover:not(.empty):not(.unavailable) {
+            background: #e9ecef;
+        }
+        .day.today {
+            border: 2px solid #4a6fa5;
+        }
+        .day.selected {
+            background: #4a6fa5;
+            color: white;
+        }
+        .day.unavailable {
+            color: #adb5bd;
+            cursor: not-allowed;
+        }
+        .empty {
+            visibility: hidden;
+        }
+        form {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            padding: 1.5rem;
+        }
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            font-family: inherit;
+            font-size: 1rem;
+        }
+        button {
+            background: #4a6fa5;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background: #3d5d8a;
+        }
+        .confirmation {
+            margin-top: 2rem;
+            text-align: center;
+            display: none;
+        }
+        .confirmation.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Appointment Booking System</h1>
+    </header>
+
+    <div class="container">
+        <div class="service-selection">
+            <h2>Select a Service</h2>
+            <select id="service" onchange="updateCalendar()">
+                <option value="Oil Change">Oil Change - 15-30 min</option>
+                <option value="Battery R&R">Battery R&R - 10-15 min</option>
+                <option value="4 Rotors,Brake Pads R&R">4 Rotors,Brake Pads R&R - 2-3 hours</option>
+            </select>
+        </div>
+        
+        <div class="grid">
+            <div class="calendar">
+                <h2>Select a Date</h2>
+                <div class="month-nav">
+                    <button onclick="previousMonth()">&laquo;</button>
+                    <h3 id="current-month">March 2025</h3>
+                    <button onclick="nextMonth()">&raquo;</button>
+                </div>
+                <div class="days-grid" id="day-names">
+                    <div class="day-name">Sun</div>
+                    <div class="day-name">Mon</div>
+                    <div class="day-name">Tue</div>
+                    <div class="day-name">Wed</div>
+                    <div class="day-name">Thu</div>
+                    <div class="day-name">Fri</div>
+                    <div class="day-name">Sat</div>
+                </div>
+                <div class="days-grid" id="calendar-days">
+                    <!-- Days will be filled with JavaScript -->
+                </div>
+                
+                <h2 style="margin-top: 2rem;">Select a Time</h2>
+                <div class="time-slots" id="time-slots">
+                    <!-- Time slots will be filled with JavaScript -->
+                </div>
+            </div>
+            
+            <form id="appointment-form">
+                <h2>Your Information</h2>
+                <div class="form-group">
+                    <label for="name">Full Name</label>
+                    <input type="text" id="name" required>
+                </div>
+                <div class="form-group">
+                    <label for="email">Email Address</label>
+                    <input type="email" id="email" required>
+                </div>
+                <div class="form-group">
+                    <label for="phone">Phone Number</label>
+                    <input type="tel" id="phone" required>
+                </div>
+                <div class="form-group">
+                    <label for="notes">Special Notes or Requests</label>
+                    <textarea id="notes" rows="3"></textarea>
+                </div>
+                
+                <div id="appointment-summary">
+                    <h3>Appointment Summary</h3>
+                    <p>Service: <span id="summary-service">Not selected</span></p>
+                    <p>Date: <span id="summary-date">Not selected</span></p>
+                    <p>Time: <span id="summary-time">Not selected</span></p>
+                </div>
+                
+                <button type="submit">Book Appointment</button>
+            </form>
+        </div>
+        
+        <div class="confirmation" id="confirmation">
+            <h2>Appointment Confirmed!</h2>
+            <p>We've sent a confirmation email to <span id="confirm-email"></span>.</p>
+            <p>Your appointment details:</p>
+            <p>Service: <span id="confirm-service"></span></p>
+            <p>Date: <span id="confirm-date"></span></p>
+            <p>Time: <span id="confirm-time"></span></p>
+            <p>Thank you for booking with us!</p>
+        </div>
+    </div>
+
+    <script>
+        // Current date tracking
+        let currentDate = new Date();
+        let selectedDate = null;
+        let selectedTimeSlot = null;
+        
+        // Initialize the calendar
+        document.addEventListener('DOMContentLoaded', function() {
+            renderCalendar();
+            document.getElementById('appointment-form').addEventListener('submit', handleFormSubmit);
+        });
+        
+        function renderCalendar() {
+            const calendarDays = document.getElementById('calendar-days');
+            calendarDays.innerHTML = '';
+            
+            // Set the current month display
+            const monthYearString = currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+            document.getElementById('current-month').textContent = monthYearString;
+            
+            // Get the first day of the month
+            const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+            const startingDay = firstDay.getDay(); // 0 = Sunday, 1 = Monday, etc.
+            
+            // Get the last day of the month
+            const lastDay = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+            const totalDays = lastDay.getDate();
+            
+            // Add empty cells for the days before the first day of the month
+            for (let i = 0; i < startingDay; i++) {
+                const emptyDay = document.createElement('div');
+                emptyDay.className = 'day empty';
+                calendarDays.appendChild(emptyDay);
+            }
+            
+            // Add days of the month
+            const today = new Date();
+            for (let i = 1; i <= totalDays; i++) {
+                const day = document.createElement('div');
+                day.className = 'day';
+                day.textContent = i;
+                
+                // Check if this day is today
+                if (currentDate.getMonth() === today.getMonth() && 
+                    currentDate.getFullYear() === today.getFullYear() && 
+                    i === today.getDate()) {
+                    day.classList.add('today');
+                }
+                
+                // Check if this day is before today (unavailable)
+                const thisDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), i);
+                if (thisDate < new Date(today.getFullYear(), today.getMonth(), today.getDate())) {
+                    day.classList.add('unavailable');
+                } else {
+                    // Add click event for available days
+                    day.addEventListener('click', function() {
+                        // Remove selected class from all days
+                        document.querySelectorAll('.day.selected').forEach(d => d.classList.remove('selected'));
+                        // Add selected class to this day
+                        day.classList.add('selected');
+                        
+                        // Set the selected date
+                        selectedDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), i);
+                        
+                        // Update the time slots
+                        updateTimeSlots();
+                        
+                        // Update the summary
+                        updateSummary();
+                    });
+                }
+                
+                calendarDays.appendChild(day);
+            }
+        }
+        
+        function previousMonth() {
+            currentDate.setMonth(currentDate.getMonth() - 1);
+            renderCalendar();
+        }
+        
+        function nextMonth() {
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            renderCalendar();
+        }
+        
+        function updateCalendar() {
+            renderCalendar();
+            clearTimeSlotSelection();
+            updateSummary();
+        }
+        
+        function updateTimeSlots() {
+            const timeSlotsContainer = document.getElementById('time-slots');
+            timeSlotsContainer.innerHTML = '';
+            
+            // Sample time slots - in a real app, these would be fetched from a server
+            // based on availability for the selected date and service
+            const timeSlots = [
+                '9:00 AM', '9:30 AM', '10:00 AM', '10:30 AM',
+                '11:00 AM', '11:30 AM', '1:00 PM', '1:30 PM',
+                '2:00 PM', '2:30 PM', '3:00 PM', '3:30 PM'
+            ];
+            
+            // Randomly make some time slots unavailable to simulate a real booking system
+            timeSlots.forEach(time => {
+                const timeSlot = document.createElement('button');
+                timeSlot.className = 'time-slot';
+                timeSlot.textContent = time;
+                
+                // Randomly mark some slots as unavailable (about 30%)
+                if (Math.random() < 0.3) {
+                    timeSlot.classList.add('unavailable');
+                } else {
+                    timeSlot.addEventListener('click', function() {
+                        // Remove selected class from all time slots
+                        document.querySelectorAll('.time-slot.selected').forEach(slot => slot.classList.remove('selected'));
+                        // Add selected class to this time slot
+                        timeSlot.classList.add('selected');
+                        
+                        // Set the selected time slot
+                        selectedTimeSlot = time;
+                        
+                        // Update the summary
+                        updateSummary();
+                    });
+                }
+                
+                timeSlotsContainer.appendChild(timeSlot);
+            });
+        }
+        
+        function clearTimeSlotSelection() {
+            selectedTimeSlot = null;
+            document.getElementById('time-slots').innerHTML = '';
+        }
+        
+        function updateSummary() {
+            const service = document.getElementById('service');
+            const serviceText = service.options[service.selectedIndex].text;
+            document.getElementById('summary-service').textContent = serviceText;
+            
+            if (selectedDate) {
+                const dateOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+                document.getElementById('summary-date').textContent = selectedDate.toLocaleDateString(undefined, dateOptions);
+            } else {
+                document.getElementById('summary-date').textContent = 'Not selected';
+            }
+            
+            if (selectedTimeSlot) {
+                document.getElementById('summary-time').textContent = selectedTimeSlot;
+            } else {
+                document.getElementById('summary-time').textContent = 'Not selected';
+            }
+        }
+        
+        function handleFormSubmit(event) {
+            event.preventDefault();
+            
+            // Check if date and time are selected
+            if (!selectedDate || !selectedTimeSlot) {
+                alert('Please select both a date and time for your appointment.');
+                return;
+            }
+            
+            // Get form values
+            const name = document.getElementById('name').value;
+            const email = document.getElementById('email').value;
+            const service = document.getElementById('service');
+            const serviceText = service.options[service.selectedIndex].text;
+            
+            // In a real app, you would send this data to a server
+            console.log('Booking appointment for:', {
+                name,
+                email,
+                service: serviceText,
+                date: selectedDate,
+                time: selectedTimeSlot
+            });
+            
+            // Show confirmation
+            document.getElementById('confirm-email').textContent = email;
+            document.getElementById('confirm-service').textContent = serviceText;
+            
+            const dateOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            document.getElementById('confirm-date').textContent = selectedDate.toLocaleDateString(undefined, dateOptions);
+            document.getElementById('confirm-time').textContent = selectedTimeSlot;
+            
+            document.getElementById('confirmation').classList.add('show');
+            
+            // Scroll to confirmation
+            document.getElementById('confirmation').scrollIntoView({ behavior: 'smooth' });
+        }
+    </script>
+</body>
+</html>
